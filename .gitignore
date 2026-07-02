@@ -1,0 +1,13 @@
+*.xlsx
+*.xls
+*.wav
+*.mp3
+*.m4a
+data/raw/
+data/real/
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.streamlit/secrets.toml
+*.log
