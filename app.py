@@ -5,12 +5,14 @@ import pandas as pd
 import streamlit as st
 
 from src.classify import classify_issue_response, load_categories
+from src.result_store import append_classification_result, update_latest_final_category as update_latest_csv_category
 from src.sample_data import DEFAULT_SYNTHETIC_EXCEL, load_sample_cases
 
 
 ROOT = Path(__file__).resolve().parent
 CATEGORIES_PATH = ROOT / "data" / "categories.json"
 SAMPLE_JSON_PATH = ROOT / "data" / "sample_cases.json"
+RESULTS_CSV_PATH = ROOT / "data" / "feedback" / "classification_results.csv"
 
 
 def load_styles():
@@ -313,26 +315,40 @@ def classify_current_text():
         st.session_state.response_text,
         categories_path=CATEGORIES_PATH,
     )
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    matched_keywords = ", ".join(result.matched_keywords)
     st.session_state.result = result
     st.session_state.final_category = result.recommended_category
-    st.session_state.history.insert(
-        0,
+    history_row = {
+        "time": created_at,
+        "issue": st.session_state.issue_text,
+        "response": st.session_state.response_text,
+        "recommended_category": result.recommended_category,
+        "final_category": result.recommended_category,
+        "confidence": result.confidence,
+        "needs_human_review": result.needs_human_review,
+    }
+    st.session_state.history.insert(0, history_row)
+    st.session_state.history = st.session_state.history[:20]
+    append_classification_result(
+        RESULTS_CSV_PATH,
         {
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "issue": st.session_state.issue_text,
-            "response": st.session_state.response_text,
-            "recommended_category": result.recommended_category,
-            "final_category": result.recommended_category,
-            "confidence": result.confidence,
-            "needs_human_review": result.needs_human_review,
+            "created_at": created_at,
+            "issue": history_row["issue"],
+            "response": history_row["response"],
+            "recommended_category": history_row["recommended_category"],
+            "final_category": history_row["final_category"],
+            "confidence": history_row["confidence"],
+            "needs_human_review": history_row["needs_human_review"],
+            "matched_keywords": matched_keywords,
         },
     )
-    st.session_state.history = st.session_state.history[:20]
 
 
 def update_latest_final_category():
     if st.session_state.history:
         st.session_state.history[0]["final_category"] = st.session_state.final_category
+        update_latest_csv_category(RESULTS_CSV_PATH, st.session_state.final_category)
 
 
 def render_header(samples_count):
@@ -368,6 +384,7 @@ def render_input_panel(samples):
         """
         <div class="planned-box">
           녹음본 STT 업로드는 다음 단계 기능입니다. 현재 MVP에서는 가상 샘플이나 직접 입력한 텍스트로 분류 흐름을 검증합니다.
+          분류 결과는 로컬 CSV에 저장되어 나중에 키워드 규칙 개선이나 모델 학습 데이터로 활용할 수 있습니다.
         </div>
         """,
         unsafe_allow_html=True,
@@ -464,6 +481,7 @@ def render_history():
           <div>
             <h3 style="margin:0;">최근 분류 결과</h3>
             <div class="small-note">상담사가 수정한 최종 카테고리까지 함께 확인합니다.</div>
+            <div class="small-note">로컬 누적 CSV: data/feedback/classification_results.csv</div>
           </div>
         </div>
         """,

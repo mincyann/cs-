@@ -9,6 +9,17 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+명령어는 Windows의 PowerShell, 명령 프롬프트, VS Code 터미널, 또는 Codex 터미널처럼 명령어를 입력할 수 있는 터미널에 입력합니다.
+
+현재 `localhost` 앱은 실행한 컴퓨터 안에서 열리는 로컬 사이트입니다. 오늘 노트북 전원을 끄면 앱도 멈춥니다. 내일 같은 노트북에서 다시 보려면 프로젝트 폴더로 이동한 뒤 다시 실행합니다.
+
+```bash
+cd C:\Users\김민서\Documents\Codex\2026-07-02\new-chat-2\cs-category-agent
+streamlit run app.py
+```
+
+다른 노트북에서 보려면 GitHub에서 코드를 받은 뒤 그 노트북에도 Python 의존성을 설치하고 같은 명령으로 실행해야 합니다.
+
 ## 디자인 방향
 
 현재 UI는 Zendesk류 고객지원 콘솔을 벤치마킹한 밝고 신뢰감 있는 화면을 목표로 합니다.
@@ -34,6 +45,28 @@ streamlit run app.py
 - 추천 카테고리, 신뢰도, 사유, 검토 필요 여부, 매칭 키워드 표시
 - 사람이 최종 카테고리를 수정할 수 있는 select box
 - 최근 분류 결과 표와 CSV 다운로드
+- 분류 결과를 로컬 CSV로 누적 저장
+
+## CSV 누적 데이터와 알고리즘 개선
+
+분류를 실행하면 결과가 `data/feedback/classification_results.csv`에 저장됩니다. 이 CSV는 실제 상담 데이터가 될 수 있으므로 GitHub에 커밋하지 않도록 `.gitignore`에 포함되어 있습니다.
+
+저장되는 주요 컬럼은 다음과 같습니다.
+
+- `created_at`: 분류 실행 시각
+- `issue`: 입력된 이슈
+- `response`: 입력된 대응
+- `recommended_category`: Agent가 추천한 카테고리
+- `final_category`: 상담사가 확정하거나 수정한 최종 카테고리
+- `confidence`: 분류 신뢰도
+- `needs_human_review`: 사람 검토 필요 여부
+- `matched_keywords`: 분류에 사용된 키워드
+
+이 데이터는 세 단계로 알고리즘 개선에 활용할 수 있습니다.
+
+1. `recommended_category`와 `final_category`가 다른 케이스를 모아 자주 틀리는 유형을 확인합니다.
+2. 틀린 케이스에서 반복되는 표현을 `data/categories.json`의 키워드에 추가하거나 가중치 규칙을 조정합니다.
+3. 충분한 데이터가 쌓이면 `issue + response`를 입력값으로, `final_category`를 정답 라벨로 사용해 가벼운 머신러닝 분류기나 LLM 분류기로 교체할 수 있습니다.
 
 ## 향후 STT 확장
 
