@@ -4,15 +4,21 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.case_store import list_reviewed_cases, save_reviewed_case
 from src.classify import classify_issue_response, load_categories
+from src.email_draft import build_email_draft
 from src.result_store import append_classification_result, update_latest_final_category as update_latest_csv_category
 from src.sample_data import DEFAULT_SYNTHETIC_EXCEL, load_sample_cases
+from src.transcript_extract import extract_issue_response
 
 
 ROOT = Path(__file__).resolve().parent
 CATEGORIES_PATH = ROOT / "data" / "categories.json"
 SAMPLE_JSON_PATH = ROOT / "data" / "sample_cases.json"
 RESULTS_CSV_PATH = ROOT / "data" / "feedback" / "classification_results.csv"
+CASE_DB_PATH = ROOT / "data" / "reviewed_cases.db"
+DEMO_TRANSCRIPT = """고객: 앱에서 검사 업로드가 계속 멈추고 결과지가 웹에서 바로 확인되지 않습니다.
+상담사: 네트워크 상태 확인과 앱 재실행을 안내했고, 웹 결과지는 브라우저 새로고침 후 다시 확인해 보시도록 안내했습니다."""
 
 
 def load_styles():
@@ -276,6 +282,14 @@ def init_state():
         "result": None,
         "history": [],
         "final_category": "",
+        "transcript_text": "",
+        "transcript_status": "",
+        "extraction_result": None,
+        "email_draft": None,
+        "responsible_owner": "",
+        "reviewer": "",
+        "internal_note": "",
+        "review_save_status": "",
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -307,6 +321,60 @@ def clear_inputs():
     st.session_state.response_text = ""
     st.session_state.result = None
     st.session_state.final_category = ""
+    st.session_state.transcript_text = ""
+    st.session_state.transcript_status = ""
+    st.session_state.extraction_result = None
+    st.session_state.email_draft = None
+    st.session_state.responsible_owner = ""
+    st.session_state.reviewer = ""
+    st.session_state.internal_note = ""
+    st.session_state.review_save_status = ""
+
+
+def apply_demo_transcript():
+    st.session_state.transcript_text = DEMO_TRANSCRIPT
+    st.session_state.extraction_result = None
+    st.session_state.result = None
+    st.session_state.email_draft = None
+
+
+def extract_current_transcript():
+    extraction = extract_issue_response(st.session_state.transcript_text)
+    st.session_state.extraction_result = extraction
+    st.session_state.issue_text = extraction.issue_text
+    st.session_state.response_text = extraction.response_text
+    st.session_state.result = None
+    st.session_state.email_draft = None
+    st.session_state.transcript_status = extraction.reason
+
+
+def save_current_review():
+    result = st.session_state.result
+    case_id = save_reviewed_case(
+        CASE_DB_PATH,
+        {
+            "transcript_text": st.session_state.transcript_text,
+            "issue_text": st.session_state.issue_text,
+            "response_text": st.session_state.response_text,
+            "recommended_category": result.recommended_category if result else "",
+            "final_category": st.session_state.final_category,
+            "responsible_owner": st.session_state.responsible_owner,
+            "review_status": "reviewed",
+            "reviewer": st.session_state.reviewer,
+            "internal_note": st.session_state.internal_note,
+        },
+    )
+    st.session_state.review_save_status = f"리뷰 완료 건 #{case_id}로 저장했습니다."
+
+
+def generate_current_email_draft():
+    st.session_state.email_draft = build_email_draft(
+        issue_text=st.session_state.issue_text,
+        response_text=st.session_state.response_text,
+        category=st.session_state.final_category,
+        responsible_owner=st.session_state.responsible_owner,
+        owner_email="",
+    )
 
 
 def classify_current_text():
@@ -383,12 +451,32 @@ def render_input_panel(samples):
     st.markdown(
         """
         <div class="planned-box">
-          녹음본 STT 업로드는 다음 단계 기능입니다. 현재 MVP에서는 가상 샘플이나 직접 입력한 텍스트로 분류 흐름을 검증합니다.
-          분류 결과는 로컬 CSV에 저장되어 나중에 키워드 규칙 개선이나 모델 학습 데이터로 활용할 수 있습니다.
+          시험판은 비용이 들지 않도록 샘플 전사문 또는 직접 입력 전사문으로 전체 업무 흐름을 검증합니다.
+          녹음본 STT는 향후 무료 로컬 모델을 기본 후보로 붙입니다.
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    with st.expander("전사문 입력 및 이슈/대응 추출", expanded=True):
+        st.text_area(
+            "전사문",
+            key="transcript_text",
+            height=150,
+            placeholder="예: 고객: 앱 업로드가 멈춰요. 상담사: 앱 재실행과 네트워크 확인을 안내했습니다.",
+        )
+        transcript_left, transcript_right = st.columns([1.2, 1])
+        with transcript_left:
+            st.button(
+                "전사문에서 이슈/대응 추출",
+                on_click=extract_current_transcript,
+                disabled=not st.session_state.transcript_text.strip(),
+                width="stretch",
+            )
+        with transcript_right:
+            st.button("샘플 전사문 넣기", on_click=apply_demo_transcript, width="stretch")
+        if st.session_state.transcript_status:
+            st.caption(st.session_state.transcript_status)
 
     st.text_area("이슈", key="issue_text", height=190, placeholder="고객이 문의한 핵심 이슈를 입력하세요.")
     st.text_area("대응", key="response_text", height=150, placeholder="상담사 또는 내부 담당자의 대응 내용을 입력하세요.")
@@ -473,21 +561,66 @@ def render_result(category_names):
     )
     st.button("최종 카테고리 반영", on_click=update_latest_final_category, width="stretch")
 
+    st.text_input("책임 주체", key="responsible_owner", placeholder="예: 앱 담당, 웹 담당, EB팀")
+    st.text_input("리뷰어", key="reviewer", placeholder="예: CS 담당자")
+    st.text_area("내부 메모", key="internal_note", height=90)
+
+    review_left, review_right = st.columns(2)
+    with review_left:
+        st.button("리뷰 완료 저장", on_click=save_current_review, width="stretch")
+    with review_right:
+        st.button("메일 초안 생성", on_click=generate_current_email_draft, width="stretch")
+
+    if st.session_state.review_save_status:
+        st.caption(st.session_state.review_save_status)
+
+    if st.session_state.email_draft:
+        draft = st.session_state.email_draft
+        st.text_input("메일 수신자", value=draft.to_email, disabled=True)
+        st.text_input("메일 제목", value=draft.subject, disabled=True)
+        st.text_area("메일 본문", value=draft.body, height=220)
+        if draft.needs_recipient_review:
+            st.caption("수신자 메일이 비어 있어 발송 전 담당자 확인이 필요합니다.")
+
 
 def render_history():
+    reviewed_cases = list_reviewed_cases(CASE_DB_PATH)
     st.markdown(
         """
         <div class="history-title">
           <div>
-            <h3 style="margin:0;">최근 분류 결과</h3>
-            <div class="small-note">상담사가 수정한 최종 카테고리까지 함께 확인합니다.</div>
-            <div class="small-note">로컬 누적 CSV: data/feedback/classification_results.csv</div>
+            <h3 style="margin:0;">리뷰 완료 기록</h3>
+            <div class="small-note">CS 담당자가 확인한 최종 결과를 앱 안에 저장합니다.</div>
+            <div class="small-note">리뷰 완료 저장소: data/reviewed_cases.db</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    if reviewed_cases:
+        reviewed_frame = pd.DataFrame(reviewed_cases)
+        visible_review_columns = [
+            "created_at",
+            "issue_text",
+            "response_text",
+            "final_category",
+            "responsible_owner",
+            "reviewer",
+            "internal_note",
+        ]
+        st.dataframe(reviewed_frame[visible_review_columns], width="stretch", hide_index=True)
+    else:
+        st.markdown(
+            """
+            <div class="empty-state" style="margin-top:12px;">
+              아직 리뷰 완료로 저장된 기록이 없습니다.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("#### 이번 세션 분류 결과")
     if not st.session_state.history:
         st.markdown(
             """
