@@ -431,7 +431,7 @@ def render_header(samples_count):
               신뢰도, 검토 필요 여부와 근거 키워드를 정리합니다.
             </p>
           </div>
-          <div class="mode-pill">Synthetic data · {samples_count} samples</div>
+          <div class="mode-pill">Original data · {samples_count} samples</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -670,7 +670,7 @@ def main():
     metrics = st.columns(3)
     metrics[0].metric("카테고리 정의", f"{len(category_names)}개")
     metrics[1].metric("최근 분류", f"{len(st.session_state.history)}건")
-    metrics[2].metric("데이터 모드", "가상 샘플")
+    metrics[2].metric("데이터 모드", "원본 우선")
 
     left, right = st.columns([1.08, 0.92], gap="large")
     with left:

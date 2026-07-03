@@ -7,14 +7,20 @@ from openpyxl import load_workbook
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SAMPLE_JSON = PROJECT_ROOT / "data" / "sample_cases.json"
+DEFAULT_SOURCE_EXCEL = PROJECT_ROOT.parent / "(사본)CS  접수 리스트.xlsx"
 DEFAULT_SYNTHETIC_EXCEL = PROJECT_ROOT.parent / "outputs" / "CS_2026_synthetic.xlsx"
 
 
 def load_sample_cases(
     sample_json_path=DEFAULT_SAMPLE_JSON,
+    source_excel_path=DEFAULT_SOURCE_EXCEL,
     synthetic_excel_path=DEFAULT_SYNTHETIC_EXCEL,
     max_cases: int = 5,
 ) -> List[Dict[str, str]]:
+    source_cases = load_source_excel_cases(source_excel_path, max_cases=max_cases)
+    if source_cases:
+        return source_cases
+
     excel_cases = load_synthetic_excel_cases(synthetic_excel_path, max_cases=max_cases)
     if excel_cases:
         return excel_cases
@@ -29,7 +35,15 @@ def load_sample_cases(
     return [_normalize_case(case, index + 1) for index, case in enumerate(cases[:max_cases])]
 
 
+def load_source_excel_cases(excel_path, max_cases: int = 5) -> List[Dict[str, str]]:
+    return _load_excel_cases(excel_path, max_cases=max_cases, title_label="원본")
+
+
 def load_synthetic_excel_cases(excel_path, max_cases: int = 5) -> List[Dict[str, str]]:
+    return _load_excel_cases(excel_path, max_cases=max_cases, title_label="")
+
+
+def _load_excel_cases(excel_path, max_cases: int = 5, title_label: str = "샘플") -> List[Dict[str, str]]:
     path = Path(excel_path)
     if not path.exists():
         return []
@@ -57,7 +71,7 @@ def load_synthetic_excel_cases(excel_path, max_cases: int = 5) -> List[Dict[str,
 
         cases.append(
             {
-                "title": f"{category} 샘플 {len(cases) + 1}",
+                "title": _case_title(category, title_label, len(cases) + 1),
                 "issue_text": issue,
                 "response_text": response,
                 "expected_category": category,
@@ -83,6 +97,11 @@ def _first_existing(headers: Dict[str, int], candidates: List[str]) -> Optional[
         if candidate in headers:
             return headers[candidate]
     return None
+
+
+def _case_title(category: str, title_label: str, index: int) -> str:
+    label = f"{title_label} " if title_label else ""
+    return f"{category} {label}샘플 {index}"
 
 
 def _normalize_case(case: Dict[str, str], index: int) -> Dict[str, str]:

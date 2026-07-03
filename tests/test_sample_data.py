@@ -22,10 +22,35 @@ def test_load_sample_cases_reads_json_fallback(tmp_path):
         encoding="utf-8",
     )
 
-    cases = load_sample_cases(sample_json_path=sample_path, synthetic_excel_path=tmp_path / "missing.xlsx")
+    cases = load_sample_cases(
+        sample_json_path=sample_path,
+        source_excel_path=tmp_path / "missing-source.xlsx",
+        synthetic_excel_path=tmp_path / "missing.xlsx",
+    )
 
     assert cases[0]["title"] == "가상 샘플"
     assert cases[0]["expected_category"] == "[웹] 관련 이슈"
+
+
+def test_load_sample_cases_prefers_source_excel(tmp_path):
+    workbook_path = tmp_path / "source.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "2026"
+    sheet.append(["날짜", "병원명", "이슈", "대응", "_x0008_카테고리2026"])
+    sheet.append(["2026-01-01", "가상병원 001", "기기 전원이 안 켜짐", "기기 회수 점검 안내", "[HW] 관련 이슈"])
+    workbook.save(workbook_path)
+
+    cases = load_sample_cases(
+        sample_json_path=tmp_path / "missing.json",
+        source_excel_path=workbook_path,
+        synthetic_excel_path=tmp_path / "missing.xlsx",
+        max_cases=1,
+    )
+
+    assert cases[0]["title"] == "[HW] 관련 이슈 원본 샘플 1"
+    assert cases[0]["issue_text"] == "기기 전원이 안 켜짐"
+    assert cases[0]["expected_category"] == "[HW] 관련 이슈"
 
 
 def test_load_synthetic_excel_cases_reads_issue_response_category(tmp_path):

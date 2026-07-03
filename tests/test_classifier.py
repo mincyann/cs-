@@ -61,6 +61,24 @@ def test_user_mistake_issue_is_classified():
     assert result.recommended_category == "[사용자] 과실"
 
 
+def test_hardware_issue_is_classified():
+    result = classify(
+        "기기 전원이 켜지지 않고 배터리 충전 후에도 동작하지 않습니다",
+        "기기 수거 후 하드웨어 점검 안내",
+    )
+
+    assert result.recommended_category == "[HW] 관련 이슈"
+
+
+def test_missing_data_issue_is_classified():
+    result = classify(
+        "업로드 완료로 보이는데 뒤쪽 데이터가 누락되었습니다",
+        "누락 구간 확인 후 담당자 확인 안내",
+    )
+
+    assert result.recommended_category == "[미해결] 데이터 누락"
+
+
 def test_low_evidence_returns_review_needed():
     result = classify("통화했습니다", "내용을 남겼습니다")
 
